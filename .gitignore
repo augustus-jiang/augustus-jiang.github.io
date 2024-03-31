@@ -1,0 +1,25 @@
+.DS_Store
+Thumbs.db
+db.json
+*.log
+node_modules/
+public/
+.deploy*/
+_multiconfig.yml
+
+
+# Dependency directories
+node_modules/
+public/
+.deploy*/
+
+# Hexo generated files
+.db.json
+*.log
+*.pid
+*.seed
+
+# System Files
+.DS_Store
+Thumbs.db
+
