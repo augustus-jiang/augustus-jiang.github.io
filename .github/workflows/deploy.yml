@@ -20,12 +20,12 @@ jobs:
     - name: Install Dependencies
       run: npm install
 
-    - name: Generate Static Files
-      run: npm run build # 确保你的package.json中有这个脚本指向`hexo generate`
+    # - name: Generate Static Files
+    #   run: npm run build # 确保你的package.json中有这个脚本指向`hexo generate`
 
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./public  # Hexo生成的静态文件目录
+    # - name: Deploy to GitHub Pages
+    #   uses: peaceiris/actions-gh-pages@v3
+    #   with:
+    #     github_token: ${{ secrets.GITHUB_TOKEN }}
+    #     publish_dir: ./public  # Hexo生成的静态文件目录
 
