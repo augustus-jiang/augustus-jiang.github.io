@@ -1,0 +1,31 @@
+name: Deploy Hexo Site
+
+on:
+  push:
+    branches:
+      - master  # 或者是你用来存放源码的分支
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v1
+      with:
+        node-version: '14' # 选择一个Node.js版本
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Generate Static Files
+      run: npm run build # 确保你的package.json中有这个脚本指向`hexo generate`
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./public  # Hexo生成的静态文件目录
+
