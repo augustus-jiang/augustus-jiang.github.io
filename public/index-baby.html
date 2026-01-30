@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>小手画画 · 宝宝空中绘画</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&family=Quicksand:wght@500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --cream: #FFF8F0;
+      --coral: #FF8A80;
+      --coral-deep: #E57373;
+      --mint: #80CBC4;
+      --butter: #FFE082;
+      --peach: #FFCCBC;
+      --ink: #5D4037;
+      --ink-soft: #8D6E63;
+      --paper: #FAFAF8;
+      --shadow-soft: rgba(93, 64, 55, 0.08);
+      --shadow-mid: rgba(93, 64, 55, 0.12);
+      --radius-lg: 28px;
+      --radius-xl: 40px;
+      --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Quicksand", sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+      overflow: hidden;
+      background-image:
+        radial-gradient(ellipse 120% 80% at 50% -20%, var(--peach) 0%, transparent 50%),
+        radial-gradient(ellipse 80% 60% at 100% 100%, var(--mint) 0%, transparent 40%),
+        radial-gradient(ellipse 60% 80% at 0% 100%, var(--peach) 0%, transparent 40%);
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+      gap: 1rem;
+    }
+
+    .title {
+      font-family: "Fredoka", sans-serif;
+      font-weight: 600;
+      font-size: clamp(1.5rem, 5vw, 2.25rem);
+      color: var(--ink);
+      text-align: center;
+      letter-spacing: 0.02em;
+      animation: titleIn 0.6s var(--ease-bounce) both;
+    }
+
+    .subtitle {
+      font-size: clamp(0.85rem, 2.5vw, 1rem);
+      color: var(--ink-soft);
+      margin-top: -0.25rem;
+      animation: titleIn 0.6s var(--ease-bounce) 0.08s both;
+    }
+
+    @keyframes titleIn {
+      from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .stage {
+      position: relative;
+      width: min(92vw, 720px);
+      aspect-ratio: 4/3;
+      max-height: 55vh;
+      background: var(--paper);
+      border-radius: var(--radius-xl);
+      box-shadow:
+        0 4px 24px var(--shadow-soft),
+        0 0 0 3px rgba(255, 138, 128, 0.2),
+        inset 0 1px 0 rgba(255,255,255,0.8);
+      overflow: hidden;
+      animation: stageIn 0.5s var(--ease-soft) 0.15s both;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius-xl);
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    .stage.fullscreen {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      max-height: none;
+      border-radius: 0;
+      z-index: 9999;
+    }
+
+    .stage.fullscreen::before {
+      border-radius: 0;
+    }
+
+    @keyframes stageIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    #videoEl {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
+    }
+
+    #drawCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      touch-action: none;
+      transform: scaleX(-1);
+      z-index: 2;
+    }
+
+    .overlay {
+      z-index: 3;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 248, 240, 0.92);
+      border-radius: var(--radius-xl);
+      transition: opacity 0.4s var(--ease-soft);
+      padding: 1.5rem;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .overlay p {
+      font-size: 1rem;
+      color: var(--ink-soft);
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .btn {
+      font-family: "Fredoka", sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      padding: 0.9rem 2rem;
+      border: none;
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+      transition: transform 0.2s var(--ease-bounce), box-shadow 0.2s var(--ease-soft);
+      box-shadow: 0 4px 14px var(--shadow-mid);
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--coral) 0%, var(--coral-deep) 100%);
+      color: white;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(255, 138, 128, 0.4);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: var(--ink);
+      border: 2px solid var(--mint);
+    }
+
+    .btn-secondary:hover {
+      background: var(--mint);
+      color: white;
+      box-shadow: 0 4px 14px rgba(128, 203, 196, 0.35);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: titleIn 0.5s var(--ease-soft) 0.25s both;
+    }
+
+    .color-swatch {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: transform 0.2s var(--ease-bounce), border-color 0.2s;
+      box-shadow: 0 2px 8px var(--shadow-soft);
+    }
+
+    .color-swatch:hover,
+    .color-swatch.active {
+      transform: scale(1.1);
+      border-color: var(--ink);
+    }
+
+    .color-swatch.active {
+      box-shadow: 0 0 0 2px white, 0 0 0 4px var(--ink);
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      min-height: 1.4em;
+      animation: titleIn 0.5s var(--ease-soft) 0.3s both;
+    }
+
+    .finger-hint {
+      position: absolute;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.85rem;
+      color: var(--ink-soft);
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
+      z-index: 4;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1 class="title">小手画画</h1>
+    <p class="subtitle">对着摄像头动动手指，在空中画画</p>
+
+    <div class="stage">
+      <video id="videoEl" playsinline></video>
+      <canvas id="inputCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;visibility:hidden;pointer-events:none;z-index:0;"></canvas>
+      <canvas id="drawCanvas"></canvas>
+      <div class="overlay" id="overlay">
+        <p>打开摄像头，用手指在空中画画</p>
+        <button class="btn btn-primary" id="startBtn" type="button">开始玩</button>
+      </div>
+      <p class="finger-hint" id="fingerHint" aria-hidden="true">伸出食指在空中移动即可绘画</p>
+    </div>
+
+    <div class="toolbar" id="toolbar" aria-hidden="true">
+      <button class="btn btn-secondary" id="clearBtn" type="button">清空画布</button>
+      <button class="btn btn-secondary" id="fullscreenBtn" type="button" title="全屏">全屏</button>
+      <button class="btn btn-secondary" id="nextTemplateBtn" type="button" title="换一张描摹">下一张描摹</button>
+      <button class="color-swatch active" id="colorCoral" type="button" title="珊瑚色" style="background:#FF8A80;" data-color="#FF8A80" aria-label="珊瑚色"></button>
+      <button class="color-swatch" id="colorMint" type="button" title="薄荷色" style="background:#80CBC4;" data-color="#80CBC4" aria-label="薄荷色"></button>
+      <button class="color-swatch" id="colorButter" type="button" title="奶油黄" style="background:#FFE082;" data-color="#FFE082" aria-label="奶油黄"></button>
+      <button class="color-swatch" id="colorInk" type="button" title="深色" style="background:#5D4037;" data-color="#5D4037" aria-label="深色"></button>
+    </div>
+
+    <p class="status" id="status">点击「开始玩」启用摄像头</p>
+  </div>
+
+  <script>
+    (function () {
+      const videoEl = document.getElementById("videoEl");
+      const inputCanvas = document.getElementById("inputCanvas");
+      const inputCtx = inputCanvas.getContext("2d");
+      const drawCanvas = document.getElementById("drawCanvas");
+      const ctx = drawCanvas.getContext("2d");
+      const overlay = document.getElementById("overlay");
+      const startBtn = document.getElementById("startBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const fullscreenBtn = document.getElementById("fullscreenBtn");
+      const nextTemplateBtn = document.getElementById("nextTemplateBtn");
+      const stageEl = document.querySelector(".stage");
+      const toolbar = document.getElementById("toolbar");
+      const fingerHint = document.getElementById("fingerHint");
+      const statusEl = document.getElementById("status");
+
+      const INDEX_TIP = 8;
+      const COLOR_BAR_TOP = 0.88;
+      const COLORS = ["#FF8A80", "#80CBC4", "#FFE082", "#5D4037"];
+      const COLOR_SWATCH_IDS = ["colorCoral", "colorMint", "colorButter", "colorInk"];
+
+      let hands = null;
+      let lastPoint = null;
+      let currentColor = "#FF8A80";
+      let stream = null;
+      let rafId = null;
+      let templateIndex = 0;
+      var strokes = [];
+      var currentStroke = null;
+      var hitCanvas = null;
+      var hitCtx = null;
+      var pathPoints = [];
+      var TRACE_HIT_LINE_WIDTH = 28;
+      var SNAP_MAX_DIST = 45;
+
+      function setStatus(msg) {
+        statusEl.textContent = msg;
+      }
+
+      function resizeCanvas() {
+        const stage = drawCanvas.parentElement;
+        if (!stage) return;
+        const w = stage.offsetWidth;
+        const h = stage.offsetHeight;
+        if (w === 0 || h === 0) return;
+        if (drawCanvas.width !== w || drawCanvas.height !== h) {
+          drawCanvas.width = w;
+          drawCanvas.height = h;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.lineWidth = 14;
+        }
+        if (!hitCanvas || hitCanvas.width !== w || hitCanvas.height !== h) {
+          hitCanvas = document.createElement("canvas");
+          hitCanvas.width = w;
+          hitCanvas.height = h;
+          hitCtx = hitCanvas.getContext("2d");
+        }
+        redrawAll();
+      }
+
+      function updateHitCanvas() {
+        var w = drawCanvas.width;
+        var h = drawCanvas.height;
+        if (!hitCtx || w === 0 || h === 0) return;
+        hitCtx.clearRect(0, 0, w, h);
+        hitCtx.strokeStyle = "#fff";
+        hitCtx.lineWidth = TRACE_HIT_LINE_WIDTH;
+        hitCtx.lineCap = "round";
+        hitCtx.lineJoin = "round";
+        TEMPLATES[templateIndex].draw(hitCtx, w, h);
+        pathPoints = TEMPLATES[templateIndex].samplePath(w, h);
+      }
+
+      function isPointOnShape(px, py) {
+        if (!hitCanvas || !hitCtx) return false;
+        var w = hitCanvas.width;
+        var h = hitCanvas.height;
+        var x = Math.floor(px);
+        var y = Math.floor(py);
+        if (x < 0 || x >= w || y < 0 || y >= h) return false;
+        try {
+          var data = hitCtx.getImageData(x, y, 1, 1).data;
+          return data[3] > 0;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function snapToPath(px, py) {
+        if (pathPoints.length === 0) return { x: px, y: py };
+        var best = null;
+        var bestD = SNAP_MAX_DIST * SNAP_MAX_DIST;
+        for (var i = 0; i < pathPoints.length; i++) {
+          var p = pathPoints[i];
+          var dx = px - p.x;
+          var dy = py - p.y;
+          var d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            best = p;
+          }
+        }
+        return best ? { x: best.x, y: best.y } : null;
+      }
+
+      function drawUnderlay() {
+        const w = drawCanvas.width;
+        const h = drawCanvas.height;
+        ctx.strokeStyle = "rgba(60,50,40,0.65)";
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        TEMPLATES[templateIndex].draw(ctx, w, h);
+        var barTop = Math.floor(h * COLOR_BAR_TOP);
+        var barH = h - barTop;
+        COLORS.forEach(function (color, i) {
+          ctx.fillStyle = color;
+          ctx.fillRect((i / COLORS.length) * w, barTop, Math.ceil(w / COLORS.length) + 1, barH);
+        });
+        ctx.strokeStyle = "rgba(0,0,0,0.25)";
+        ctx.lineWidth = 2;
+        for (var i = 1; i < COLORS.length; i++) {
+          ctx.beginPath();
+          ctx.moveTo((i / COLORS.length) * w, barTop);
+          ctx.lineTo((i / COLORS.length) * w, h);
+          ctx.stroke();
+        }
+        updateHitCanvas();
+      }
+
+      function drawAllStrokes() {
+        strokes.forEach(function (stroke) {
+          ctx.strokeStyle = stroke.color;
+          ctx.lineWidth = 22;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          stroke.points.forEach(function (p, i) {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+        });
+      }
+
+      function redrawAll() {
+        const w = drawCanvas.width;
+        const h = drawCanvas.height;
+        if (w === 0 || h === 0) return;
+        ctx.clearRect(0, 0, w, h);
+        drawUnderlay();
+        drawAllStrokes();
+      }
+
+      function sampleLine(x0, y0, x1, y1, n) {
+        var out = [];
+        for (var i = 0; i <= n; i++) {
+          var t = i / n;
+          out.push({ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t });
+        }
+        return out;
+      }
+      function sampleBezier(p0, p1, p2, p3, n) {
+        var out = [];
+        for (var i = 0; i <= n; i++) {
+          var t = i / n;
+          var u = 1 - t;
+          var x = u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x;
+          var y = u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y;
+          out.push({ x: x, y: y });
+        }
+        return out;
+      }
+      function sampleArc(cx, cy, r, n) {
+        var out = [];
+        for (var i = 0; i <= n; i++) {
+          var a = (i / n) * Math.PI * 2;
+          out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+        }
+        return out;
+      }
+
+      var TEMPLATES = [
+        { name: "圆形", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.28;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.28;
+          return sampleArc(cx, cy, r, 80);
+        }},
+        { name: "星星", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.28;
+          ctx.beginPath();
+          for (var i = 0; i < 5; i++) {
+            var a = (i * 4 * Math.PI / 5) - Math.PI / 2;
+            var x = cx + r * Math.cos(a); var y = cy + r * Math.sin(a);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.closePath(); ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.28;
+          var pts = [];
+          for (var i = 0; i < 5; i++) {
+            var a = (i * 4 * Math.PI / 5) - Math.PI / 2;
+            pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+          }
+          var out = [];
+          for (var i = 0; i < 5; i++) {
+            var j = (i + 1) % 5;
+            out = out.concat(sampleLine(pts[i].x, pts[i].y, pts[j].x, pts[j].y, 18));
+          }
+          return out;
+        }},
+        { name: "爱心", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.45; var s = Math.min(w, h) * 0.22;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - s * 0.3);
+          ctx.bezierCurveTo(cx + s, cy - s * 1.3, cx + s * 1.4, cy + s * 0.5, cx, cy + s * 1.2);
+          ctx.bezierCurveTo(cx - s * 1.4, cy + s * 0.5, cx - s, cy - s * 1.3, cx, cy - s * 0.3);
+          ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.45; var s = Math.min(w, h) * 0.22;
+          var p0 = { x: cx, y: cy - s * 0.3 }; var p1 = { x: cx + s, y: cy - s * 1.3 }; var p2 = { x: cx + s * 1.4, y: cy + s * 0.5 }; var p3 = { x: cx, y: cy + s * 1.2 };
+          var right = sampleBezier(p0, p1, p2, p3, 40);
+          p1 = { x: cx - s * 1.4, y: cy + s * 0.5 }; p2 = { x: cx - s, y: cy - s * 1.3 }; p3 = p0;
+          var left = sampleBezier({ x: cx, y: cy + s * 1.2 }, p1, p2, p3, 40);
+          return right.concat(left.slice(1));
+        }},
+        { name: "房子", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var top = h * 0.25; var bot = h * 0.65; var half = Math.min(w, h) * 0.28;
+          ctx.beginPath();
+          ctx.moveTo(cx, top);
+          ctx.lineTo(cx + half * 0.9, bot - half * 0.5);
+          ctx.lineTo(cx + half * 0.9, bot);
+          ctx.lineTo(cx - half * 0.9, bot);
+          ctx.lineTo(cx - half * 0.9, bot - half * 0.5);
+          ctx.closePath();
+          ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var top = h * 0.25; var bot = h * 0.65; var half = Math.min(w, h) * 0.28;
+          var segs = [
+            [cx, top, cx + half * 0.9, bot - half * 0.5],
+            [cx + half * 0.9, bot - half * 0.5, cx + half * 0.9, bot],
+            [cx + half * 0.9, bot, cx - half * 0.9, bot],
+            [cx - half * 0.9, bot, cx - half * 0.9, bot - half * 0.5],
+            [cx - half * 0.9, bot - half * 0.5, cx, top]
+          ];
+          var out = [];
+          for (var i = 0; i < segs.length; i++) {
+            var s = segs[i];
+            out = out.concat(sampleLine(s[0], s[1], s[2], s[3], 20));
+          }
+          return out;
+        }},
+        { name: "太阳", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.18;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+          for (var i = 0; i < 8; i++) {
+            var a = (i / 8) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+            ctx.lineTo(cx + (r + 25) * Math.cos(a), cy + (r + 25) * Math.sin(a));
+            ctx.stroke();
+          }
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var r = Math.min(w, h) * 0.18;
+          var out = sampleArc(cx, cy, r, 50);
+          for (var i = 0; i < 8; i++) {
+            var a = (i / 8) * Math.PI * 2;
+            out = out.concat(sampleLine(cx + r * Math.cos(a), cy + r * Math.sin(a), cx + (r + 25) * Math.cos(a), cy + (r + 25) * Math.sin(a), 8));
+          }
+          return out;
+        }},
+        { name: "小花", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.45; var r = Math.min(w, h) * 0.12;
+          for (var i = 0; i < 6; i++) {
+            var a = (i / 6) * Math.PI * 2;
+            var x = cx + Math.cos(a) * r * 1.8; var y = cy + Math.sin(a) * r * 1.8;
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+          }
+          ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2); ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.45; var r = Math.min(w, h) * 0.12;
+          var out = [];
+          for (var i = 0; i < 6; i++) {
+            var a = (i / 6) * Math.PI * 2;
+            var x = cx + Math.cos(a) * r * 1.8; var y = cy + Math.sin(a) * r * 1.8;
+            out = out.concat(sampleArc(x, y, r, 25));
+          }
+          out = out.concat(sampleArc(cx, cy, r * 0.6, 25));
+          return out;
+        }},
+        { name: "小鱼", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var L = Math.min(w, h) * 0.25;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, L, L * 0.6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(cx + L, cy);
+          ctx.lineTo(cx + L * 1.5, cy - L * 0.5);
+          ctx.lineTo(cx + L * 1.5, cy + L * 0.5);
+          ctx.closePath();
+          ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.4; var L = Math.min(w, h) * 0.25;
+          var out = [];
+          for (var i = 0; i <= 50; i++) {
+            var t = (i / 50) * Math.PI * 2;
+            out.push({ x: cx + L * Math.cos(t), y: cy + L * 0.6 * Math.sin(t) });
+          }
+          out = out.concat(sampleLine(cx + L, cy, cx + L * 1.5, cy - L * 0.5, 12));
+          out = out.concat(sampleLine(cx + L * 1.5, cy - L * 0.5, cx + L * 1.5, cy + L * 0.5, 12));
+          out = out.concat(sampleLine(cx + L * 1.5, cy + L * 0.5, cx + L, cy, 12));
+          return out;
+        }},
+        { name: "气球", draw: function (ctx, w, h) {
+          var cx = w * 0.5; var cy = h * 0.35; var r = Math.min(w, h) * 0.2;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx - 8, cy + r + 40); ctx.lineTo(cx + 8, cy + r + 40); ctx.closePath(); ctx.stroke();
+        }, samplePath: function (w, h) {
+          var cx = w * 0.5; var cy = h * 0.35; var r = Math.min(w, h) * 0.2;
+          var out = sampleArc(cx, cy, r, 60);
+          out = out.concat(sampleLine(cx, cy + r, cx - 8, cy + r + 40, 8));
+          out = out.concat(sampleLine(cx - 8, cy + r + 40, cx + 8, cy + r + 40, 8));
+          out = out.concat(sampleLine(cx + 8, cy + r + 40, cx, cy + r, 8));
+          return out;
+        }}
+      ];
+
+      function drawLine(x1, y1, x2, y2) {
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = 22;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      function clearCanvas() {
+        strokes = [];
+        currentStroke = null;
+        lastPoint = null;
+        redrawAll();
+      }
+
+      function initHands() {
+        if (hands) return hands;
+        if (typeof Hands === "undefined") {
+          setStatus("请使用 Chrome 或 Edge 并刷新页面");
+          return null;
+        }
+        setStatus("正在加载手部识别…");
+        try {
+          hands = new Hands({
+            locateFile: (file) => "https://cdn.jsdelivr.net/npm/@mediapipe/hands/" + file
+          });
+          hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.3
+          });
+          hands.onResults(onHandResults);
+          setStatus("手部识别已就绪");
+        } catch (err) {
+          console.error(err);
+          setStatus("手部识别加载失败，请刷新重试");
+          return null;
+        }
+        return hands;
+      }
+
+      function setColorByIndex(index) {
+        if (index < 0 || index >= COLORS.length) return;
+        currentColor = COLORS[index];
+        document.querySelectorAll(".color-swatch").forEach(function (s) { s.classList.remove("active"); });
+        var el = document.getElementById(COLOR_SWATCH_IDS[index]);
+        if (el) el.classList.add("active");
+      }
+
+      function onHandResults(results) {
+        const w = drawCanvas.width;
+        const h = drawCanvas.height;
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+          lastPoint = null;
+          currentStroke = null;
+          return;
+        }
+        for (const landmarks of results.multiHandLandmarks) {
+          if (!landmarks || landmarks.length <= INDEX_TIP) continue;
+          const tip = landmarks[INDEX_TIP];
+          const x = tip.x * w;
+          const y = tip.y * h;
+          if (tip.y > COLOR_BAR_TOP) {
+            var idx = 3;
+            if (tip.x < 0.22) idx = 0;
+            else if (tip.x < 0.48) idx = 1;
+            else if (tip.x < 0.72) idx = 2;
+            setColorByIndex(idx);
+            lastPoint = null;
+            currentStroke = null;
+            continue;
+          }
+          if (!isPointOnShape(x, y)) {
+            lastPoint = null;
+            currentStroke = null;
+            continue;
+          }
+          var snapped = snapToPath(x, y);
+          if (!snapped) {
+            lastPoint = null;
+            currentStroke = null;
+            continue;
+          }
+          var sx = snapped.x;
+          var sy = snapped.y;
+          if (lastPoint) {
+            if (!currentStroke) {
+              currentStroke = { color: currentColor, points: [lastPoint] };
+              strokes.push(currentStroke);
+            }
+            currentStroke.points.push({ x: sx, y: sy });
+            drawLine(lastPoint.x, lastPoint.y, sx, sy);
+          } else {
+            currentStroke = { color: currentColor, points: [{ x: sx, y: sy }] };
+            strokes.push(currentStroke);
+          }
+          lastPoint = { x: sx, y: sy };
+        }
+      }
+
+      function processFrame() {
+        if (!hands || !videoEl.srcObject || videoEl.readyState < 2) {
+          rafId = requestAnimationFrame(processFrame);
+          return;
+        }
+        var input = videoEl;
+        if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+          if (inputCanvas.width !== videoEl.videoWidth || inputCanvas.height !== videoEl.videoHeight) {
+            inputCanvas.width = videoEl.videoWidth;
+            inputCanvas.height = videoEl.videoHeight;
+          }
+          inputCtx.drawImage(videoEl, 0, 0, videoEl.videoWidth, videoEl.videoHeight);
+          input = inputCanvas;
+        }
+        hands.send({ image: input })
+          .then(() => { rafId = requestAnimationFrame(processFrame); })
+          .catch((err) => {
+            console.error(err);
+            rafId = requestAnimationFrame(processFrame);
+          });
+      }
+
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          stageEl.requestFullscreen().then(() => {
+            stageEl.classList.add("fullscreen");
+            fullscreenBtn.textContent = "退出全屏";
+            resizeCanvas();
+          }).catch(console.error);
+        } else {
+          document.exitFullscreen().then(() => {
+            stageEl.classList.remove("fullscreen");
+            fullscreenBtn.textContent = "全屏";
+            resizeCanvas();
+          }).catch(console.error);
+        }
+      }
+
+      document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement) {
+          stageEl.classList.remove("fullscreen");
+          fullscreenBtn.textContent = "全屏";
+        }
+        resizeCanvas();
+      });
+
+      async function startCamera() {
+        startBtn.disabled = true;
+        setStatus("正在打开摄像头…");
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+          videoEl.srcObject = stream;
+          await new Promise((resolve, reject) => {
+            videoEl.onloadedmetadata = () => {
+              videoEl.play().then(resolve).catch(reject);
+            };
+            videoEl.onerror = () => reject(new Error("视频加载失败"));
+          });
+          overlay.classList.add("hidden");
+          toolbar.removeAttribute("aria-hidden");
+          fingerHint.removeAttribute("aria-hidden");
+          setStatus("伸出食指在空中移动即可绘画");
+        } catch (e) {
+          setStatus("无法打开摄像头，请允许使用摄像头后重试");
+          console.error(e);
+          startBtn.disabled = false;
+          return;
+        }
+        try {
+          resizeCanvas();
+          window.addEventListener("resize", resizeCanvas);
+          setStatus("伸出手指到画面底部可换颜色，描摹：" + TEMPLATES[templateIndex].name);
+          var model = initHands();
+          if (!model) {
+            startBtn.disabled = false;
+            return;
+          }
+          processFrame();
+        } catch (err) {
+          console.error(err);
+          setStatus("初始化失败，请刷新页面重试");
+          startBtn.disabled = false;
+        }
+      }
+
+      startBtn.addEventListener("click", startCamera);
+
+      clearBtn.addEventListener("click", () => {
+        clearCanvas();
+        setStatus("画布已清空，继续用手指画画吧");
+      });
+
+      fullscreenBtn.addEventListener("click", toggleFullscreen);
+
+      nextTemplateBtn.addEventListener("click", function () {
+        templateIndex = (templateIndex + 1) % TEMPLATES.length;
+        strokes = [];
+        currentStroke = null;
+        lastPoint = null;
+        redrawAll();
+        setStatus("描摹：" + TEMPLATES[templateIndex].name + "，用手指跟着画吧");
+      });
+
+      document.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("click", () => {
+          document.querySelectorAll(".color-swatch").forEach((s) => s.classList.remove("active"));
+          el.classList.add("active");
+          currentColor = el.getAttribute("data-color");
+        });
+      });
+
+      var overlayEl = document.getElementById("overlay");
+      if (overlayEl) {
+        var btn = overlayEl.querySelector(".btn");
+        if (btn) btn.focus();
+      }
+    })();
+  </script>
+</body>
+</html>
